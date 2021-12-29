@@ -26,10 +26,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Localization;
 using Robust.Shared.Player;
-using System.Collections.Generic;
 using Robust.Shared.Utility;
-using Content.Server.Inventory.Components;
-using Content.Shared.Inventory;
 using Content.Shared.Hands;
 
 namespace Content.Server.Nutrition.EntitySystems

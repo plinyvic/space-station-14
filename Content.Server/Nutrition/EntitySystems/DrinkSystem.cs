@@ -258,7 +258,7 @@ namespace Content.Server.Nutrition.EntitySystems
                 return false;
 
             var curTime = _gameTiming.CurTime;
-            if (!EntityManager.TryGetComponent<ItemCooldownComponent>(uid, out ItemCooldownComponent cooldown))
+            if (!EntityManager.TryGetComponent<ItemCooldownComponent>(uid, out var cooldown))
                 return false;
             if (curTime < cooldown.CooldownEnd)
                 return false;
@@ -331,7 +331,7 @@ namespace Content.Server.Nutrition.EntitySystems
 
             cooldown.CooldownStart = curTime;
             cooldown.CooldownEnd = curTime + TimeSpan.FromSeconds(drink.DrinkCooldown);
-            RaiseLocalEvent(uid, new RefreshItemCooldownEvent((TimeSpan)cooldown.CooldownStart, (TimeSpan)cooldown.CooldownEnd), false);
+            RaiseLocalEvent(uid, new RefreshItemCooldownEvent((TimeSpan)cooldown.CooldownStart, (TimeSpan)cooldown.CooldownEnd), false); // not sure what this does but i see it implemented in melee
             return true;
         }
 
