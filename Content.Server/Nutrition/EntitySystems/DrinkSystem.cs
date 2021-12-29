@@ -2,6 +2,7 @@ using Content.Server.Body.Components;
 using Content.Server.Body.Systems;
 using Content.Server.Chemistry.Components.SolutionManager;
 using Content.Server.Chemistry.EntitySystems;
+using Content.Server.Cooldown;
 using Content.Server.DoAfter;
 using Content.Server.Fluids.Components;
 using Content.Server.Fluids.EntitySystems;
@@ -12,6 +13,7 @@ using Content.Shared.Administration.Logs;
 using Content.Shared.Body.Components;
 using Content.Shared.Chemistry.Components;
 using Content.Shared.Chemistry.Reagent;
+using Content.Shared.Cooldown;
 using Content.Shared.Database;
 using Content.Shared.Examine;
 using Content.Shared.FixedPoint;
@@ -28,7 +30,9 @@ using Robust.Shared.IoC;
 using Robust.Shared.Localization;
 using Robust.Shared.Player;
 using Robust.Shared.Random;
+using Robust.Shared.Timing;
 using Robust.Shared.Utility;
+using System;
 
 namespace Content.Server.Nutrition.EntitySystems
 {
@@ -45,6 +49,7 @@ namespace Content.Server.Nutrition.EntitySystems
         [Dependency] private readonly SharedAdminLogSystem _logSystem = default!;
         [Dependency] private readonly ActionBlockerSystem _actionBlockerSystem = default!;
         [Dependency] private readonly SpillableSystem _spillableSystem = default!;
+        [Dependency] private readonly IGameTiming _gameTiming = default!;
 
         public override void Initialize()
         {
@@ -252,7 +257,13 @@ namespace Content.Server.Nutrition.EntitySystems
             if (!Resolve(uid, ref drink))
                 return false;
 
-            // if currently being used to force-feed, cancel that action.
+            var curTime = _gameTiming.CurTime;
+            if (!EntityManager.TryGetComponent<ItemCooldownComponent>(uid, out ItemCooldownComponent cooldown))
+                return false;
+            if (curTime < cooldown.CooldownEnd)
+                return false;
+
+            // if currently being used to force-feed or is on cooldown, cancel that action.
             if (drink.CancelToken != null)
             {
                 drink.CancelToken.Cancel();
@@ -318,8 +329,13 @@ namespace Content.Server.Nutrition.EntitySystems
             drain.DoEntityReaction(userUid, ReactionMethod.Ingestion);
             _stomachSystem.TryTransferSolution((firstStomach.Value.Comp).Owner, drain, firstStomach.Value.Comp);
 
+            cooldown.CooldownStart = curTime;
+            cooldown.CooldownEnd = curTime + TimeSpan.FromSeconds(drink.DrinkCooldown);
+            RaiseLocalEvent(uid, new RefreshItemCooldownEvent((TimeSpan)cooldown.CooldownStart, (TimeSpan)cooldown.CooldownEnd), false);
             return true;
         }
+
+        
 
         /// <summary>
         ///     Attempt to force someone else to drink some of a drink. Returns true if any interaction took place,

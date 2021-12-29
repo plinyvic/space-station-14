@@ -3,6 +3,7 @@
   id: DrinkCanBaseFull
   abstract: true
   components:
+  - type: ItemCooldown
   - type: Drink
     openSounds:
       collection: canOpenSounds

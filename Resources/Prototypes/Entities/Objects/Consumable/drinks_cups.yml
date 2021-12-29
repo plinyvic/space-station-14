@@ -5,6 +5,7 @@
   name: base cup
   abstract: true
   components:
+  - type: ItemCooldown
   - type: SolutionContainerManager
     solutions:
       drink:

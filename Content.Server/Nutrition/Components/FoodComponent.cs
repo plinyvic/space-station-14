@@ -56,6 +56,12 @@ namespace Content.Server.Nutrition.Components
         public float ForceFeedDelay = 3;
 
         /// <summary>
+        ///     Seconds required to eat food item.
+        /// </summary>
+        [DataField("eatDelay")]
+        public float EatDelay = 1;
+
+        /// <summary>
         ///     Token for interrupting a do-after action (e.g., force feeding). If not null, implies component is
         ///     currently "in use".
         /// </summary>

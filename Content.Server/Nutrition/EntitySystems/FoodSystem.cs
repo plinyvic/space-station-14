@@ -59,6 +59,59 @@ namespace Content.Server.Nutrition.EntitySystems
             SubscribeLocalEvent<SharedBodyComponent, ForceFeedEvent>(OnForceFeed);
             SubscribeLocalEvent<ForceFeedCancelledEvent>(OnForceFeedCancelled);
             SubscribeLocalEvent<InventoryComponent, IngestionAttemptEvent>(OnInventoryIngestAttempt);
+            SubscribeLocalEvent<SharedBodyComponent, EatEvent>(OnEat);
+            SubscribeLocalEvent<EatCancelledEvent>(OnEatCancelled);
+        }
+
+        private void OnEatCancelled(EatCancelledEvent args)
+        {
+            args.Food.CancelToken = null;
+        }
+
+        /// <summary>
+        /// Called after successful doafter in TryEatFood
+        /// </summary>
+        private void OnEat(EntityUid user, SharedBodyComponent component, EatEvent args)
+        {
+            var food = args.Food;
+            var solution = args.FoodSolution;
+            var body = EntityManager.GetComponent<SharedBodyComponent>(user);
+            var stomachs = _bodySystem.GetComponentsOnMechanisms<StomachComponent>(user, body);
+            var transferAmount = food.TransferAmount != null ? FixedPoint2.Min((FixedPoint2) food.TransferAmount, solution.CurrentVolume) : solution.CurrentVolume;
+            var split = _solutionContainerSystem.SplitSolution(user, solution, transferAmount);
+            var firstStomach = stomachs.FirstOrNull(
+                stomach => _stomachSystem.CanTransferSolution((stomach.Comp).Owner, split));
+
+            if (firstStomach == null)
+            {
+                _solutionContainerSystem.TryAddSolution(user, solution, split);
+                _popupSystem.PopupEntity(Loc.GetString("food-system-you-cannot-eat-any-more"), user, Filter.Entities(user));
+                return;
+            }
+
+            // TODO: Account for partial transfer.
+            split.DoEntityReaction(user, ReactionMethod.Ingestion);
+            _stomachSystem.TryTransferSolution((firstStomach.Value.Comp).Owner, split, firstStomach.Value.Comp);
+
+            SoundSystem.Play(Filter.Pvs(user), food.UseSound.GetSound(), user, AudioParams.Default.WithVolume(-1f));
+            _popupSystem.PopupEntity(Loc.GetString(food.EatMessage, ("food", food.Owner)), user, Filter.Entities(user));
+
+            //Try to break all used utensils
+            foreach (var utensil in args.Utensils)
+            {
+                _utensilSystem.TryBreak((utensil).Owner, user);
+            }
+
+            if (food.UsesRemaining > 0)
+            {
+                food.CancelToken = null;
+                TryUseFood(args.Food.Owner, user, food);
+            }
+            else if (string.IsNullOrEmpty(food.TrashPrototype))
+                EntityManager.QueueDeleteEntity((food).Owner);
+            else
+                DeleteAndSpawnTrash(food, user);
+
         }
 
         /// <summary>
@@ -137,7 +190,7 @@ namespace Content.Server.Nutrition.EntitySystems
             if (!Resolve(uid, ref food))
                 return false;
 
-            // if currently being used to force-feed, cancel that action.
+            // if currently being used, cancel that action.
             if (food.CancelToken != null)
             {
                 food.CancelToken.Cancel();
@@ -176,40 +229,17 @@ namespace Content.Server.Nutrition.EntitySystems
             if (!user.InRangeUnobstructed(uid, popup: true))
                 return true;
 
-            var transferAmount = food.TransferAmount != null ? FixedPoint2.Min((FixedPoint2) food.TransferAmount, solution.CurrentVolume) : solution.CurrentVolume;
-            var split = _solutionContainerSystem.SplitSolution(uid, solution, transferAmount);
-            var firstStomach = stomachs.FirstOrNull(
-                stomach => _stomachSystem.CanTransferSolution((stomach.Comp).Owner, split));
-
-            if (firstStomach == null)
+            food.CancelToken = new();
+            _doAfterSystem.DoAfter(new DoAfterEventArgs(user, food.EatDelay, food.CancelToken.Token, user)
             {
-                _solutionContainerSystem.TryAddSolution(uid, solution, split);
-                _popupSystem.PopupEntity(Loc.GetString("food-system-you-cannot-eat-any-more"), user, Filter.Entities(user));
-                return true;
-            }
-
-            // TODO: Account for partial transfer.
-            split.DoEntityReaction(user, ReactionMethod.Ingestion);
-            _stomachSystem.TryTransferSolution((firstStomach.Value.Comp).Owner, split, firstStomach.Value.Comp);
-
-            SoundSystem.Play(Filter.Pvs(user), food.UseSound.GetSound(), user, AudioParams.Default.WithVolume(-1f));
-            _popupSystem.PopupEntity(Loc.GetString(food.EatMessage, ("food", food.Owner)), user, Filter.Entities(user));
-
-            // Try to break all used utensils
-            foreach (var utensil in usedUtensils)
-            {
-                _utensilSystem.TryBreak((utensil).Owner, user);
-            }
-
-            if (food.UsesRemaining > 0)
-            {
-                return true;
-            }
-
-            if (string.IsNullOrEmpty(food.TrashPrototype))
-                EntityManager.QueueDeleteEntity((food).Owner);
-            else
-                DeleteAndSpawnTrash(food, user);
+                BreakOnUserMove = true,
+                BreakOnDamage = true,
+                BreakOnStun = true,
+                BreakOnTargetMove = true,
+                MovementThreshold = 1.0f,
+                TargetFinishedEvent = new EatEvent(user, food, solution, utensils),
+                BroadcastCancelledEvent = new EatCancelledEvent(food)
+            });
 
             return true;
         }
